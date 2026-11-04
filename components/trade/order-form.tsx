@@ -3,7 +3,7 @@
 import { Percent } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { MarketSnapshot } from '@/hooks/use-okx-market'
 import { type PaperOrder, availableOf, usePaperAccount } from '@/hooks/use-paper-account'
 import { useSession } from '@/hooks/use-session'
@@ -14,6 +14,7 @@ import { PAPER_TRADING } from '@/lib/paper-trading'
 import { cn } from '@/lib/utils'
 
 const LEVERAGES = [3, 5, 10, 20] as const
+const SUCCESS_NOTE_MS = 4000
 
 const percent = (rate: string) => `${Number((Number(rate) * 100).toFixed(4))}%`
 
@@ -88,6 +89,13 @@ export function OrderForm({
   const [amount, setAmount] = useState('')
   const [pending, setPending] = useState(false)
   const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
+
+  // A success note describes the order just placed; it goes stale once that order fills or is canceled.
+  useEffect(() => {
+    if (message?.kind !== 'success') return
+    const timer = setTimeout(() => setMessage(null), SUCCESS_NOTE_MS)
+    return () => clearTimeout(timer)
+  }, [message])
 
   const spendAsset = side === 'buy' ? market.quote : market.base
   const available = availableOf(account.balances, spendAsset)
@@ -207,7 +215,10 @@ export function OrderForm({
             key={s}
             type="button"
             aria-pressed={side === s}
-            onClick={() => setSide(s)}
+            onClick={() => {
+              setSide(s)
+              setMessage(null)
+            }}
             className={cn(
               'rounded-md py-2 text-sm font-bold transition-colors',
               side === s ? (s === 'buy' ? 'bg-up text-background' : 'bg-down text-foreground') : 'text-white/60 hover:text-white',
@@ -225,7 +236,10 @@ export function OrderForm({
             type="button"
             role="tab"
             aria-selected={type === k}
-            onClick={() => setType(k)}
+            onClick={() => {
+              setType(k)
+              setMessage(null)
+            }}
             className={cn(
               'relative pb-2 text-sm transition-colors',
               type === k ? 'font-bold text-white after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full after:bg-gold' : 'text-white/50 hover:text-white/80',
@@ -238,14 +252,21 @@ export function OrderForm({
 
       {type === 'limit' ? (
         <div className="flex flex-col gap-2">
-          <Field label={t('价格', 'Price')} unit={market.quote} value={price} onChange={setPrice} placeholder={last ? last.toFixed(market.priceDp) : ''} />
+          <Field label={t('价格', 'Price')} unit={market.quote} value={price} onChange={(v) => {
+            setPrice(v)
+            setMessage(null)
+          }} placeholder={last ? last.toFixed(market.priceDp) : ''} />
           <div className="grid grid-cols-5 gap-1">
             {quick.map((q) => (
               <button
                 key={q.label}
                 type="button"
                 disabled={!q.value}
-                onClick={() => q.value && setPrice(q.value.toFixed(market.priceDp))}
+                onClick={() => {
+                  if (!q.value) return
+                  setPrice(q.value.toFixed(market.priceDp))
+                  setMessage(null)
+                }}
                 className="rounded-md bg-white/[0.05] py-1.5 text-[11px] text-white/70 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40"
               >
                 {q.label}
@@ -261,7 +282,10 @@ export function OrderForm({
         label={t('数量', 'Amount')}
         unit={market.base}
         value={amount}
-        onChange={setAmount}
+        onChange={(v) => {
+          setAmount(v)
+          setMessage(null)
+        }}
         placeholder={(0).toFixed(market.qtyDp)}
       />
 

@@ -116,9 +116,15 @@ export function OrderBook({ market, snapshot }: { market: Market; snapshot: Mark
             </span>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col">
-            {view !== 'bids' && <BookRows rows={[...asks].reverse()} side="ask" maxTotal={maxTotal} market={market} />}
-            <div className="flex items-center gap-2 px-3 py-2">
+          {/* Each side gets its own clipped half: asks hug the mid price from above and bids from below, so when the
+              panel is shorter than the full ladder the far-away levels are cut off instead of spilling out of it. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {view !== 'bids' && (
+              <div className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
+                <BookRows rows={[...asks].reverse()} side="ask" maxTotal={maxTotal} market={market} />
+              </div>
+            )}
+            <div className="flex shrink-0 items-center gap-2 px-3 py-2">
               <span className={cn('text-lg font-bold tabular-nums transition-colors', up ? 'text-up' : 'text-down')}>{formatNumber(price, market.priceDp)}</span>
               {snapshot.direction &&
                 (up ? <ArrowUp className="size-4 text-up" aria-hidden="true" /> : <ArrowDown className="size-4 text-down" aria-hidden="true" />)}
@@ -128,11 +134,15 @@ export function OrderBook({ market, snapshot }: { market: Market; snapshot: Mark
                 </span>
               )}
             </div>
-            {view !== 'asks' && <BookRows rows={bids} side="bid" maxTotal={maxTotal} market={market} />}
+            {view !== 'asks' && (
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <BookRows rows={bids} side="bid" maxTotal={maxTotal} market={market} />
+              </div>
+            )}
             {!snapshot.bids.length && <p className="px-3 py-6 text-center text-xs text-white/40">{t('连接订单簿…', 'Connecting order book…')}</p>}
           </div>
 
-          <div className="mt-auto flex items-center gap-2 px-3 py-3 text-[11px] tabular-nums">
+          <div className="mt-auto flex shrink-0 items-center gap-2 px-3 py-3 text-[11px] tabular-nums">
             <span className="text-up">B {formatNumber(bidPct, 2)}%</span>
             <div className="flex h-1 flex-1 overflow-hidden rounded-full bg-down">
               <div className="h-full bg-up transition-[width] duration-500" style={{ width: `${bidPct}%` }} />
