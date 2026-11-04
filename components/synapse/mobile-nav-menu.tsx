@@ -3,12 +3,14 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
+import { useSession } from '@/hooks/use-session'
 import { useI18n } from '@/lib/i18n'
 import { NAV_GROUPS } from './nav-data'
 import { NavItemRow } from './nav-menu'
 
 export function MobileNavMenu({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useI18n()
+  const { user } = useSession()
   const [expanded, setExpanded] = useState<string | null>(null)
 
   return (
@@ -83,12 +85,21 @@ export function MobileNavMenu({ open, onClose }: { open: boolean; onClose: () =>
             >
               {t('VIP礼遇通道', 'VIP Access')}
             </a>
-            <a
-              href="/register"
-              className="flex h-11 flex-1 items-center justify-center rounded-full bg-white/10 text-[14px] text-white"
-            >
-              {t('注册', 'Sign Up')}
-            </a>
+            {user ? (
+              <a
+                href="/trade/BTCUSDT"
+                className="flex h-11 flex-1 items-center justify-center rounded-full bg-white/10 text-[14px] text-white"
+              >
+                {t('模拟交易', 'Paper Trading')}
+              </a>
+            ) : (
+              <a
+                href="/register"
+                className="flex h-11 flex-1 items-center justify-center rounded-full bg-white/10 text-[14px] text-white"
+              >
+                {t('注册', 'Sign Up')}
+              </a>
+            )}
           </div>
         </motion.div>
       )}

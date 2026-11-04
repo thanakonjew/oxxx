@@ -1,10 +1,13 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { LanguageSwitcher } from '@/components/synapse/language-switcher'
 import { DesktopNavMenu } from '@/components/synapse/nav-menu'
 import { type MarketSnapshot, useOkxMarket } from '@/hooks/use-okx-market'
+import { useSession } from '@/hooks/use-session'
+import { loginHref } from '@/lib/api-client'
 import { I18nProvider, useI18n } from '@/lib/i18n'
 import {
   INTERVALS,
@@ -29,6 +32,8 @@ import { TradingViewChart } from './tradingview-chart'
 
 export function TradeNav() {
   const { t } = useI18n()
+  const pathname = usePathname()
+  const { user, logout } = useSession()
   return (
     <header className="relative z-50 flex h-14 items-center justify-between gap-4 border-b border-line px-4">
       <div className="flex items-center gap-2">
@@ -40,9 +45,27 @@ export function TradeNav() {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <a href="#" className="rounded-full bg-gold px-4 py-1.5 text-sm font-bold text-gold-deep transition-[filter] hover:brightness-110">
-          {t('登录', 'Log in')}
-        </a>
+        {user ? (
+          <>
+            <span className="hidden max-w-48 truncate text-sm text-white/60 sm:inline" title={user.email}>
+              {user.email}
+            </span>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="rounded-full border border-white/20 px-4 py-1.5 text-sm text-white/80 transition-colors hover:border-white/40 hover:text-white"
+            >
+              {t('退出', 'Log out')}
+            </button>
+          </>
+        ) : (
+          <Link
+            href={loginHref(pathname ?? '/trade/BTCUSDT')}
+            className="rounded-full bg-gold px-4 py-1.5 text-sm font-bold text-gold-deep transition-[filter] hover:brightness-110"
+          >
+            {t('登录', 'Log in')}
+          </Link>
+        )}
         <LanguageSwitcher />
       </div>
     </header>

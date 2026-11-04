@@ -3,14 +3,17 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, Download, Eye, EyeOff, KeyRound } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useId, useState } from 'react'
 import { LanguageSwitcher } from '@/components/synapse/language-switcher'
 import DitherVeil from '@/components/react-bits/dither-veil'
+import { type SessionUser, useSession } from '@/hooks/use-session'
+import { ApiRequestError, apiFetch, nextPathFromLocation } from '@/lib/api-client'
 import { I18nProvider, useI18n } from '@/lib/i18n'
+import { EMAIL_RE } from '@/lib/paper-trading'
 
 type Method = 'email' | 'phone'
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 const PHONE_RE = /^\d{6,15}$/
 
 const DIAL_CODES = ['+86', '+852', '+65', '+1', '+44', '+81'] as const
@@ -73,7 +76,7 @@ export function WelcomePanel() {
   )
 }
 
-function FieldShell({ children, invalid }: { children: React.ReactNode; invalid?: boolean }) {
+export function FieldShell({ children, invalid }: { children: React.ReactNode; invalid?: boolean }) {
   return (
     <div
       className={`flex h-14 items-center gap-2 rounded-xl border bg-raised px-4 transition-colors focus-within:border-gold/70 focus-within:shadow-[0_0_0_3px_color-mix(in_oklab,var(--color-gold)_18%,transparent)] ${
@@ -88,6 +91,10 @@ function FieldShell({ children, invalid }: { children: React.ReactNode; invalid?
 function LoginForm() {
   const { t } = useI18n()
   const ids = useId()
+  const router = useRouter()
+  const session = useSession()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [method, setMethod] = useState<Method>('email')
   const [step, setStep] = useState<'account' | 'password'>('account')
   const [email, setEmail] = useState('')
@@ -106,20 +113,38 @@ function LoginForm() {
     setMethod(next)
     setTouched(false)
     setNotice(null)
+    setError(null)
   }
 
   const onAccountSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setTouched(true)
     if (!accountValid) return
+    setError(null)
+    if (method === 'phone') {
+      setNotice(t('手机号登录即将开放，请先使用邮箱登录。', 'Phone sign-in is coming soon. Please use email for now.'))
+      return
+    }
     setNotice(null)
     setStep('password')
   }
 
-  const onPasswordSubmit = (e: React.FormEvent) => {
+  const onPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (password.length < 8) return
-    setNotice(t('登录服务即将开放，敬请期待。', 'Sign-in is coming soon. Stay tuned.'))
+    if (password.length < 8 || pending) return
+    setPending(true)
+    setError(null)
+    try {
+      const { user } = await apiFetch<{ user: SessionUser }>('/api/auth/login', {
+        method: 'POST',
+        body: { email: email.trim(), password },
+      })
+      await session.refresh({ user }, { revalidate: false })
+      router.replace(nextPathFromLocation())
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? t(err.zh, err.en) : t('登录失败，请稍后重试', 'Sign-in failed. Please try again.'))
+      setPending(false)
+    }
   }
 
   const tabs: { key: Method; label: string }[] = [
@@ -282,6 +307,7 @@ function LoginForm() {
                   setStep('account')
                   setPassword('')
                   setNotice(null)
+                  setError(null)
                 }}
                 aria-label={t('返回修改账号', 'Back to change account')}
                 className="flex size-8 shrink-0 items-center justify-center rounded-full text-foreground/70 transition-colors hover:bg-foreground/10 hover:text-foreground"
@@ -324,17 +350,17 @@ function LoginForm() {
 
             <button
               type="submit"
-              disabled={password.length < 8}
+              disabled={password.length < 8 || pending}
               className="h-14 rounded-xl bg-gold text-base font-bold text-gold-deep transition-all hover:bg-gold-light hover:shadow-[0_0_32px_-8px_var(--color-gold)] disabled:cursor-not-allowed disabled:bg-raised disabled:text-foreground/35 disabled:shadow-none"
             >
-              {t('登录', 'Log In')}
+              {pending ? t('登录中…', 'Logging in…') : t('登录', 'Log In')}
             </button>
           </motion.form>
         )}
       </AnimatePresence>
 
-      <p aria-live="polite" className="min-h-5 text-center text-sm text-gold-light">
-        {notice}
+      <p aria-live="polite" className={`min-h-5 text-center text-sm ${error ? 'text-down' : 'text-gold-light'}`}>
+        {error ?? notice}
       </p>
 
       <p className="-mt-6 text-center text-sm text-foreground/60">
