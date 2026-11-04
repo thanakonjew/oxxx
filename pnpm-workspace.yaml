@@ -3,3 +3,7 @@ pmOnFail: ignore
 minimumReleaseAgeExclude:
   - '@next/*'
   - next
+
+# Dependencies allowed to run install scripts. esbuild (pulled in by drizzle-kit) verifies its native binary.
+allowBuilds:
+  esbuild: true
