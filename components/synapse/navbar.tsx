@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion'
 import { Crown, Download } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useSession } from '@/hooks/use-session'
 import { useI18n } from '@/lib/i18n'
 import { LanguageSwitcher } from './language-switcher'
 import { MobileNavMenu } from './mobile-nav-menu'
@@ -46,6 +47,7 @@ function IconButton({ label, children }: { label: string; children: React.ReactN
 
 export function Navbar({ visible }: { visible: boolean }) {
   const { t } = useI18n()
+  const { user, logout } = useSession()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
@@ -88,20 +90,43 @@ export function Navbar({ visible }: { visible: boolean }) {
             <Crown className="size-4" aria-hidden="true" />
             {t('VIP礼遇通道', 'VIP Access')}
           </a>
-          <a
-            href="/register"
-            className="hidden h-12 items-center rounded-full bg-white/15 px-5 text-[15px] text-white backdrop-blur-md transition-colors hover:bg-white/25 md:flex"
-          >
-            {t('注册', 'Sign Up')}
-          </a>
-          <motion.a
-            href="/login"
-            whileHover={{ scale: 1.03, backgroundColor: '#e2e2e6' }}
-            whileTap={{ scale: 0.97 }}
-            className="flex h-10 items-center rounded-full bg-white px-5 text-[14px] font-medium text-black md:h-12 md:px-6 md:text-[15px]"
-          >
-            {t('登录', 'Log In')}
-          </motion.a>
+          {user ? (
+            <>
+              <a
+                href="/trade/BTCUSDT"
+                title={user.email}
+                className="hidden h-12 items-center rounded-full bg-white/15 px-5 text-[15px] text-white backdrop-blur-md transition-colors hover:bg-white/25 md:flex"
+              >
+                {t('模拟交易', 'Paper Trading')}
+              </a>
+              <motion.button
+                type="button"
+                onClick={() => void logout()}
+                whileHover={{ scale: 1.03, backgroundColor: '#e2e2e6' }}
+                whileTap={{ scale: 0.97 }}
+                className="flex h-10 items-center rounded-full bg-white px-5 text-[14px] font-medium text-black md:h-12 md:px-6 md:text-[15px]"
+              >
+                {t('退出', 'Log Out')}
+              </motion.button>
+            </>
+          ) : (
+            <>
+              <a
+                href="/register"
+                className="hidden h-12 items-center rounded-full bg-white/15 px-5 text-[15px] text-white backdrop-blur-md transition-colors hover:bg-white/25 md:flex"
+              >
+                {t('注册', 'Sign Up')}
+              </a>
+              <motion.a
+                href="/login"
+                whileHover={{ scale: 1.03, backgroundColor: '#e2e2e6' }}
+                whileTap={{ scale: 0.97 }}
+                className="flex h-10 items-center rounded-full bg-white px-5 text-[14px] font-medium text-black md:h-12 md:px-6 md:text-[15px]"
+              >
+                {t('登录', 'Log In')}
+              </motion.a>
+            </>
+          )}
           <div className="hidden items-center gap-1 border-l border-white/15 pl-2 lg:flex">
             <IconButton label={t('下载 App', 'Download App')}>
               <Download className="size-5" aria-hidden="true" />

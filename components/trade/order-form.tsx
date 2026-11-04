@@ -1,13 +1,36 @@
 'use client'
 
 import { Percent } from 'lucide-react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import type { MarketSnapshot } from '@/hooks/use-okx-market'
+import { type PaperOrder, availableOf, usePaperAccount } from '@/hooks/use-paper-account'
+import { useSession } from '@/hooks/use-session'
+import { ApiRequestError, apiFetch, loginHref } from '@/lib/api-client'
 import { useI18n } from '@/lib/i18n'
 import { type Market, formatNumber } from '@/lib/markets'
+import { PAPER_TRADING } from '@/lib/paper-trading'
 import { cn } from '@/lib/utils'
 
 const LEVERAGES = [3, 5, 10, 20] as const
+
+const percent = (rate: string) => `${Number((Number(rate) * 100).toFixed(4))}%`
+
+/** Counts decimal places in a typed amount such as "0.125". */
+const decimalsIn = (value: string) => value.split('.')[1]?.length ?? 0
+
+/** Turns partial input like "1." or ".5" into the plain form the API accepts ("1", "0.5"). */
+const normalizeAmount = (value: string) => value.trim().replace(/\.$/, '').replace(/^\./, '0.')
+
+export function PaperBadge() {
+  const { t } = useI18n()
+  return (
+    <span className="rounded-full border border-gold/50 bg-gold/10 px-2 py-0.5 text-[11px] font-bold text-gold-light">
+      {t('模拟交易', 'Paper')}
+    </span>
+  )
+}
 
 function Field({
   label,
@@ -56,10 +79,74 @@ export function OrderForm({
   isPerpetual?: boolean
 }) {
   const { t } = useI18n()
+  const pathname = usePathname()
+  const { user } = useSession()
+  const account = usePaperAccount(Boolean(user))
   const [side, setSide] = useState<'buy' | 'sell'>('buy')
   const [type, setType] = useState<'limit' | 'market'>('limit')
   const [price, setPrice] = useState('')
   const [amount, setAmount] = useState('')
+  const [pending, setPending] = useState(false)
+  const [message, setMessage] = useState<{ kind: 'error' | 'success'; text: string } | null>(null)
+
+  const spendAsset = side === 'buy' ? market.quote : market.base
+  const available = availableOf(account.balances, spendAsset)
+
+  // Paper trading covers spot only; say why the button is disabled instead of hiding it.
+  const blockedReason = isPerpetual
+    ? t('模拟交易暂只支持现货', 'Paper trading supports spot only for now')
+    : leverage !== null
+      ? t('模拟交易暂不支持杠杆，请关闭杠杆开关', 'Paper trading has no margin yet. Turn off Margin.')
+      : null
+
+  const validationError = (): string | null => {
+    if (!(Number(amount) > 0)) return t('请输入数量', 'Enter an amount')
+    if (decimalsIn(amount) > market.qtyDp) return t(`数量最多 ${market.qtyDp} 位小数`, `Amount allows at most ${market.qtyDp} decimals`)
+    if (type === 'limit') {
+      if (!(Number(price) > 0)) return t('请输入价格', 'Enter a price')
+      if (decimalsIn(price) > market.priceDp) return t(`价格最多 ${market.priceDp} 位小数`, `Price allows at most ${market.priceDp} decimals`)
+    }
+    return null
+  }
+
+  const submit = async () => {
+    if (blockedReason || pending) return
+    const problem = validationError()
+    if (problem) {
+      setMessage({ kind: 'error', text: problem })
+      return
+    }
+    setPending(true)
+    setMessage(null)
+    try {
+      const { order } = await apiFetch<{ order: PaperOrder }>('/api/orders', {
+        method: 'POST',
+        body: {
+          symbol: market.symbol,
+          side,
+          type,
+          quantity: normalizeAmount(amount),
+          ...(type === 'limit' ? { price: normalizeAmount(price) } : {}),
+        },
+      })
+      setMessage({
+        kind: 'success',
+        text:
+          order.status === 'filled'
+            ? t(`已成交，均价 ${order.filledPrice} ${market.quote}`, `Filled at ${order.filledPrice} ${market.quote}`)
+            : t('委托已挂单，可在「当前委托」查看', 'Order placed. See Open Orders.'),
+      })
+      setAmount('')
+      await account.refresh()
+    } catch (err) {
+      setMessage({
+        kind: 'error',
+        text: err instanceof ApiRequestError ? t(err.zh, err.en) : t('下单失败，请稍后重试', 'Order failed. Please try again.'),
+      })
+    } finally {
+      setPending(false)
+    }
+  }
 
   const last = snapshot.lastPrice ?? snapshot.tickers[market.symbol]?.last ?? null
   const effectivePrice = type === 'market' ? last : Number(price) || last
@@ -76,7 +163,10 @@ export function OrderForm({
   return (
     <section aria-label={t('下单', 'Place order')} className="flex h-full flex-col gap-4 rounded-lg bg-panel p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-[15px] font-bold text-white">{isPerpetual ? t('永续合约', 'Perpetual') : leverage ? t('杠杆', 'Margin') : t('现货', 'Spot')}</h2>
+        <h2 className="flex items-center gap-2 text-[15px] font-bold text-white">
+          {isPerpetual ? t('永续合约', 'Perpetual') : leverage ? t('杠杆', 'Margin') : t('现货', 'Spot')}
+          <PaperBadge />
+        </h2>
         <button
           type="button"
           role="switch"
@@ -167,25 +257,66 @@ export function OrderForm({
         <Field label={t('价格', 'Price')} unit={market.quote} value="" placeholder={t('市场最优价', 'Best market price')} disabled />
       )}
 
-      <Field label={t('数量', 'Amount')} unit={market.base} value={amount} onChange={setAmount} placeholder="0.000" />
+      <Field
+        label={t('数量', 'Amount')}
+        unit={market.base}
+        value={amount}
+        onChange={setAmount}
+        placeholder={(0).toFixed(market.qtyDp)}
+      />
 
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-white/40">{leverage ? t('所需保证金', 'Required margin') : t('金额', 'Total')}</span>
-        <span className="tabular-nums text-white/80">
-          {formatNumber(total, 2)} {market.quote}
-        </span>
+      <div className="flex flex-col gap-1.5 text-xs">
+        {user && (
+          <div className="flex items-center justify-between">
+            <span className="text-white/40">{t('可用（模拟）', 'Available (paper)')}</span>
+            <span className="tabular-nums text-white/80">
+              {formatNumber(Number(available), spendAsset === market.quote ? 2 : market.qtyDp)} {spendAsset}
+            </span>
+          </div>
+        )}
+        <div className="flex items-center justify-between">
+          <span className="text-white/40">{leverage ? t('所需保证金', 'Required margin') : t('金额', 'Total')}</span>
+          <span className="tabular-nums text-white/80">
+            {formatNumber(total, 2)} {market.quote}
+          </span>
+        </div>
       </div>
 
-      <a
-        href="#"
-        className="flex h-12 items-center justify-center rounded-lg bg-gold text-[15px] font-bold text-gold-deep transition-[filter,box-shadow] hover:shadow-[0_0_24px_-6px_var(--color-gold)] hover:brightness-110"
+      {user ? (
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={Boolean(blockedReason) || pending}
+          className={cn(
+            'flex h-12 items-center justify-center rounded-lg text-[15px] font-bold transition-[filter,opacity] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100',
+            side === 'buy' ? 'bg-up text-background' : 'bg-down text-foreground',
+          )}
+        >
+          {pending
+            ? t('提交中…', 'Submitting…')
+            : side === 'buy'
+              ? t(`买入 ${market.base}`, `Buy ${market.base}`)
+              : t(`卖出 ${market.base}`, `Sell ${market.base}`)}
+        </button>
+      ) : (
+        <Link
+          href={loginHref(pathname ?? `/trade/${market.symbol}`)}
+          className="flex h-12 items-center justify-center rounded-lg bg-gold text-[15px] font-bold text-gold-deep transition-[filter,box-shadow] hover:shadow-[0_0_24px_-6px_var(--color-gold)] hover:brightness-110"
+        >
+          {t('登录 / 注册', 'Log in / Sign up')}
+        </Link>
+      )}
+
+      <p
+        aria-live="polite"
+        className={cn('min-h-4 text-xs', blockedReason || message?.kind === 'error' ? 'text-down' : 'text-up')}
       >
-        {t('登录 / 注册', 'Log in / Sign up')}
-      </a>
+        {user ? (blockedReason ?? message?.text) : null}
+      </p>
 
       <p className="flex items-center gap-2 text-xs text-white/50">
         <Percent className="size-3.5" aria-hidden="true" />
-        {t('费率等级', 'Fee tier')} · Maker 0.02% / Taker 0.05%
+        {t('费率等级', 'Fee tier')} · Maker {percent(PAPER_TRADING.makerFeeRate)} / Taker {percent(PAPER_TRADING.takerFeeRate)}
       </p>
     </section>
   )
